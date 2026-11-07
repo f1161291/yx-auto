@@ -6,7 +6,7 @@
 let customPreferredIPs = [];
 let customPreferredDomains = [];
 let epd = true;  // 启用优选域名
-let epi = true;  // 启用优选IP
+let epi = false;  // 启用优选IP
 let egi = true;  // 启用GitHub优选
 let ev = true;   // 启用VLESS协议
 let et = false;  // 启用Trojan协议
@@ -22,18 +22,38 @@ const directDomains = [
     { name: "cloudflare.182682.xyz", domain: "cloudflare.182682.xyz" },
     { domain: "freeyx.cloudflare88.eu.org" },
     { domain: "bestcf.top" },
-    { domain: "cdn.2020111.xyz" },
+    { domain: "mfa.gov.ua" },
     { domain: "cf.0sm.com" },
+    { domain: "saas.sin.fan" },
+    { domain: "store.ubi.com" },
+    { domain: "ss.204617.xyz" },
+    { domain: "ss.408508.xyz" },
+    { domain: "cf.130519.xyz" },
     { domain: "cf.090227.xyz" },
-    { domain: "cf.zhetengsha.eu.org" },
+    { domain: "cdn.547320.xyz" },		
+    { domain: "cdn.2020111.xyz" },
+    { domain: "cdns.doon.eu.org" },
     { domain: "cfip.1323123.xyz" },
-    { domain: "cloudflare-ip.mofashi.ltd" },
-    { domain: "cf.877771.xyz" },
-    { domain: "xn--b6gac.eu.org" }
+    { domain: "xn--b6gac.eu.org" },
+    { domain: "cloudflare.seeck.cn" },
+    { domain: "cmcc.cloudflare.seeck.cn" },
+    { domain: "cucc.cloudflare.seeck.cn" },
+    { domain: "ctcc.cloudflare.seeck.cn" },
+    { domain: "cloudflare-ip.mofashi.ltd" }
 ];
 
 // 默认优选IP来源URL
-const defaultIPURL = 'https://raw.githubusercontent.com/qwer-search/bestip/refs/heads/main/kejilandbestip.txt';
+// 默认优选IP来源（按地区分组的多个优选地址，可在页面勾选）
+const builtinPreferredRegions = [
+    { region: 'HK',      name: '香港',   url: 'https://bestcf.pages.dev/random-region/HK/100.txt' },
+    { region: 'TW',      name: '台湾',   url: 'https://bestcf.pages.dev/random-region/TW/100.txt' },
+    { region: 'JP',      name: '日本',   url: 'https://bestcf.pages.dev/random-region/JP/100.txt' },
+    { region: 'SG',      name: '新加坡', url: 'https://bestcf.pages.dev/random-region/SG/100.txt' },
+    { region: 'US',      name: '美国',   url: 'https://bestcf.pages.dev/random-region/US/100.txt' },
+    { region: 'KR',      name: '韩国',   url: 'https://bestcf.pages.dev/random-region/KR/100.txt' },
+];
+// 默认订阅（未显式指定 piu 时）使用以上全部地区源拼接
+const defaultIPURL = builtinPreferredRegions.map(r => r.url).join('\n');
 
 // UUID验证
 function isValidUUID(str) {
@@ -616,7 +636,7 @@ async function handleSubscriptionRequest(request, user, customDomain, piu, ipv4E
                         }
                     }
                 }
-            } else {
+            } else if (piu) {
                 // 原有的GitHub优选逻辑（单URL）
                 const newIPList = await fetchAndParseNewIPs(piu);
                 if (newIPList.length > 0) {
@@ -1236,10 +1256,27 @@ function generateHomePage(scuValue) {
                 <div class="switch active" id="switchGitHub"></div>
             </div>
             
-            <div class="form-group" id="githubUrlGroup" style="margin-top: 12px;">
-                <label>GitHub优选URL（可选）</label>
-                <input type="text" id="githubUrl" placeholder="留空则使用默认地址" style="font-size: 15px;">
-                <small style="display: block; margin-top: 6px; color: #86868b; font-size: 13px;">自定义优选IP列表来源URL，留空则使用默认地址</small>
+            <div class="form-group" id="regionGroup" style="margin-top: 12px;">
+                <label>地区优选（可选，默认全选）</label>
+                <div style="display: flex; gap: 16px; flex-wrap: wrap; margin-top: 8px;">
+                    <label class="checkbox-label"><input type="checkbox" class="region-checkbox" value="https://bestcf.pages.dev/random-region/HK/100.txt" checked><span>香港 HK</span></label>
+                    <label class="checkbox-label"><input type="checkbox" class="region-checkbox" value="https://bestcf.pages.dev/random-region/TW/100.txt" checked><span>台湾 TW</span></label>
+                    <label class="checkbox-label"><input type="checkbox" class="region-checkbox" value="https://bestcf.pages.dev/random-region/JP/100.txt" checked><span>日本 JP</span></label>
+                    <label class="checkbox-label"><input type="checkbox" class="region-checkbox" value="https://bestcf.pages.dev/random-region/SG/100.txt" checked><span>新加坡 SG</span></label>
+                    <label class="checkbox-label"><input type="checkbox" class="region-checkbox" value="https://bestcf.pages.dev/random-region/US/100.txt" checked><span>美国 US</span></label>
+                    <label class="checkbox-label"><input type="checkbox" class="region-checkbox" value="https://bestcf.pages.dev/random-region/KR/100.txt" checked><span>韩国 KR</span></label>
+                </div>
+                <div style="margin-top: 8px;">
+                    <button type="button" class="client-btn" style="font-size: 13px; padding: 6px 10px;" onclick="document.querySelectorAll('.region-checkbox').forEach(c=&gt;c.checked=true)">全选</button>
+                    <button type="button" class="client-btn" style="font-size: 13px; padding: 6px 10px;" onclick="document.querySelectorAll('.region-checkbox').forEach(c=&gt;c.checked=false)">全不选</button>
+                </div>
+                <small style="display: block; margin-top: 6px; color: #86868b; font-size: 13px;">勾选需要使用的地区，生成订阅时会并行抓取这些优选列表</small>
+            </div>
+
+            <div class="form-group" style="margin-top: 12px;">
+                <label>自定义优选URL（可选，多行可用）</label>
+                <input type="text" id="githubUrl" placeholder="留空则使用上方勾选的地区" style="font-size: 15px;">
+                <small style="display: block; margin-top: 6px; color: #86868b; font-size: 13px;">可填写额外的优选IP列表来源URL，每行一个，留空则不使用</small>
             </div>
             
             <div class="form-group" style="margin-top: 24px;">
@@ -1291,7 +1328,7 @@ function generateHomePage(scuValue) {
                         <span>IPv4</span>
                     </label>
                     <label class="checkbox-label">
-                        <input type="checkbox" id="ipv6Enabled" checked>
+                        <input type="checkbox" id="ipv6Enabled">
                         <span>IPv6</span>
                     </label>
                 </div>
@@ -1301,7 +1338,7 @@ function generateHomePage(scuValue) {
                 <label>运营商选择</label>
                 <div style="display: flex; gap: 16px; flex-wrap: wrap; margin-top: 8px;">
                     <label class="checkbox-label">
-                        <input type="checkbox" id="ispMobile" checked>
+                        <input type="checkbox" id="ispMobile">
                         <span>移动</span>
                     </label>
                     <label class="checkbox-label">
@@ -1446,16 +1483,19 @@ function generateHomePage(scuValue) {
             const ispUnicom = document.getElementById('ispUnicom').checked;
             const ispTelecom = document.getElementById('ispTelecom').checked;
             
-            const githubUrl = document.getElementById('githubUrl').value.trim();
-            
+            // 地区优选：收集勾选的地区URL + 自定义URL，多行拼接
+            const regionUrls = Array.from(document.querySelectorAll('.region-checkbox:checked')).map(cb => cb.value.trim()).filter(Boolean);
+            const customGithub = document.getElementById('githubUrl').value.trim();
+            const githubUrlParts = [...regionUrls];
+            if (customGithub) githubUrlParts.push(customGithub);
+            const githubUrl = githubUrlParts.join('\n');
+
             const currentUrl = new URL(window.location.href);
             const baseUrl = currentUrl.origin;
             let subscriptionUrl = \`\${baseUrl}/\${uuid}/sub?domain=\${encodeURIComponent(domain)}&epd=\${switches.switchDomain ? 'yes' : 'no'}&epi=\${switches.switchIP ? 'yes' : 'no'}&egi=\${switches.switchGitHub ? 'yes' : 'no'}\`;
-            
-            // 添加GitHub优选URL
-            if (githubUrl) {
-                subscriptionUrl += \`&piu=\${encodeURIComponent(githubUrl)}\`;
-            }
+
+            // 添加GitHub优选URL（地区源 + 自定义源，多行拼接；为空表示不使用GitHub优选）
+            subscriptionUrl += \`&piu=\${encodeURIComponent(githubUrl)}\`;
             
             // 添加协议选择
             if (switches.switchVL) subscriptionUrl += '&ev=yes';
@@ -1651,7 +1691,9 @@ export default {
             epd = url.searchParams.get('epd') !== 'no';
             epi = url.searchParams.get('epi') !== 'no';
             egi = url.searchParams.get('egi') !== 'no';
-            const piu = url.searchParams.get('piu') || defaultIPURL;
+            // piu 为 null（未提供）时使用内置全部地区源；为空串（前端显式不选）时不使用GitHub优选
+            const piuParam = url.searchParams.get('piu');
+            const piu = piuParam === null ? defaultIPURL : piuParam;
             
             // 协议选择
             const evEnabled = url.searchParams.get('ev') === 'yes' || (url.searchParams.get('ev') === null && ev);
