@@ -1246,7 +1246,7 @@ function generateHomePage(scuValue) {
                 <div>
                     <div class="list-item-label">启用优选IP</div>
                 </div>
-                <div class="switch active" id="switchIP"></div>
+                <div class="switch" id="switchIP"></div>
             </div>
             
             <div class="list-item" onclick="toggleSwitch('switchGitHub')">
@@ -1338,7 +1338,7 @@ function generateHomePage(scuValue) {
                 <label>运营商选择</label>
                 <div style="display: flex; gap: 16px; flex-wrap: wrap; margin-top: 8px;">
                     <label class="checkbox-label">
-                        <input type="checkbox" id="ispMobile">
+                        <input type="checkbox" id="ispMobile" checked>
                         <span>移动</span>
                     </label>
                     <label class="checkbox-label">
@@ -1357,7 +1357,7 @@ function generateHomePage(scuValue) {
                     <div class="list-item-label">仅TLS节点</div>
                     <div class="list-item-description">启用后只生成带TLS的节点，不生成非TLS节点（如80端口）</div>
                 </div>
-                <div class="switch" id="switchTLS"></div>
+                <div class="switch active" id="switchTLS"></div>
             </div>
             
             <div class="list-item" onclick="toggleSwitch('switchECH')" style="margin-top: 8px;">
@@ -1388,12 +1388,12 @@ function generateHomePage(scuValue) {
     <script>
         let switches = {
             switchDomain: true,
-            switchIP: true,
+            switchIP: false,
             switchGitHub: true,
             switchVL: true,
             switchTJ: false,
             switchVM: false,
-            switchTLS: false,
+            switchTLS: true,
             switchECH: false
         };
         
