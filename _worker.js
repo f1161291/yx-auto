@@ -1488,7 +1488,10 @@ function generateHomePage(scuValue) {
             const customGithub = document.getElementById('githubUrl').value.trim();
             const githubUrlParts = [...regionUrls];
             if (customGithub) githubUrlParts.push(customGithub);
-            const githubUrl = githubUrlParts.join('\n');
+            // 注意：此处位于 Worker 的反引号模板字符串内，换行转义会被模板先求值成真实换行，
+            // 导致输出到浏览器的 JS 出现字符串中间断行，使整段脚本 SyntaxError。
+            // 用 String.fromCharCode(10) 生成换行符，避免任何转义序列。
+            const githubUrl = githubUrlParts.join(String.fromCharCode(10));
 
             const currentUrl = new URL(window.location.href);
             const baseUrl = currentUrl.origin;
