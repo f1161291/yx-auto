@@ -1,8 +1,9 @@
+
 vip.pjq.cc.cd:443#粤-Cloudflare-域名-1-DNS轮循-稳定-HK-CMIN2
-http://www.dbs.com:443#%E7%B2%A4-Cloudflare-%E5%9F%9F%E5%90%8D-2-DBS-HK-CMIN2
-http://www.shopify.com:443#黑/新-Cloudflare-域名-Shopify-HK-CMIN2
-http://www.cortera.com:443#%E7%B2%A4-Cloudflare-%E5%9F%9F%E5%90%8D-3-Cortera-HK-CMIN2
+www.dbs.com:443#粤-Cloudflare-域名-2-DBS-HK-CMIN2
 openai.com:443#粤-Cloudflare-域名-4-OpenAI-HK-CMIN2
+www.shopify.com:443#黑/新-Cloudflare-域名-Shopify-HK-CMIN2
+www.cortera.com:443#粤-Cloudflare-域名-3-Cortera-HK-CMIN2
 172.64.145.93:443#黑/新-Cloudflare-❶Shopify-HK-CMIN2
 104.18.42.163:443#黑/新-Cloudflare-❷Shopify-HK-CMIN2
 23.227.38.65:443#粤-Cloudflare-1-MyShopify-HK-CMIN2
