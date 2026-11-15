@@ -36,9 +36,6 @@ const directDomains = [
     { domain: "cfip.1323123.xyz" },
     { domain: "xn--b6gac.eu.org" },
     { domain: "cloudflare.seeck.cn" },
-    { domain: "cmcc.cloudflare.seeck.cn" },
-    { domain: "cucc.cloudflare.seeck.cn" },
-    { domain: "ctcc.cloudflare.seeck.cn" },
     { domain: "cloudflare-ip.mofashi.ltd" }
 ];
 
@@ -54,6 +51,42 @@ const builtinPreferredRegions = [
 ];
 // 默认订阅（未显式指定 piu 时）使用以上全部地区源拼接
 const defaultIPURL = builtinPreferredRegions.map(r => r.url).join('\n');
+
+// CMNI2 优选库：不写死内容，运行时从线上拉取，仓库文件更新后自动生效
+const CMNI2_URL = 'https://raw.githubusercontent.com/f1161291/yx-auto/refs/heads/main/CMNI2';
+const CMNI2_SHORT_URL = 'https://raw.githubusercontent.com/f1161291/yx-auto/main/CMNI2';
+const CMNI2_MIRROR = 'https://js.xiray.de5.net/' + CMNI2_URL; // GitHub 加速站（约 5 分钟缓存）
+
+// 竞速源列表：并发请求，任一成功即可。
+// 加速站更快但有约 5 分钟缓存；若希望每次都拿到刚更新的文件，把第一行删掉，只留官方 raw。
+const CMNI2_SOURCES = [
+    CMNI2_MIRROR,
+    CMNI2_URL,
+];
+
+// 剥掉加速站前缀与 refs/heads，让同一个文件的各种写法共用一份缓存
+function 规范化优选源URL(url) {
+    const raw = String(url || '').trim();
+    const stripped = raw.replace(/^https:\/\/js\.xiray\.de5\.net\//i, '').replace(/\/refs\/heads\//i, '/');
+    try {
+        const u = new URL(stripped);
+        u.search = '';
+        u.hash = '';
+        return u.href.replace(/\/$/, '');
+    } catch (e) {
+        return stripped;
+    }
+}
+
+const 优选源镜像表 = new Map();
+for (const 别名 of [CMNI2_URL, CMNI2_SHORT_URL, CMNI2_MIRROR]) {
+    优选源镜像表.set(规范化优选源URL(别名), CMNI2_SOURCES);
+}
+
+// isolate 级缓存：只保存「最近一次成功拉取到的线上内容」，全部源失败时兜底。
+// 与硬编码快照不同，它会随每次成功拉取刷新，不会停留在旧版本。
+const 优选源运行时缓存 = new Map();
+
 
 // UUID验证
 function isValidUUID(str) {
@@ -131,61 +164,74 @@ async function 整理成数组(内容) {
     return 地址数组;
 }
 
+// 抓取单个优选源（带超时、HTTP 状态检查、编码探测；只读一次 body）
+async function 抓取单个优选源(url, 外部信号, 超时时间) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 超时时间);
+    const onAbort = () => controller.abort();
+    外部信号?.addEventListener('abort', onAbort, { once: true });
+    try {
+        const response = await fetch(url, { signal: controller.signal });
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        const buffer = await response.arrayBuffer();
+        const contentType = (response.headers.get('content-type') || '').toLowerCase();
+        const charset = contentType.match(/charset=([^\s;]+)/i)?.[1]?.toLowerCase() || '';
+        const decoders = charset.includes('gb') ? ['gb2312', 'utf-8'] : ['utf-8', 'gb2312'];
+        for (const decoder of decoders) {
+            try {
+                const decoded = new TextDecoder(decoder).decode(buffer);
+                if (decoded && decoded.length > 0 && !decoded.includes('\ufffd')) return decoded;
+            } catch (e) { /* Workers 仅支持 UTF-8，忽略不支持的编码 */ }
+        }
+        const text = new TextDecoder('utf-8').decode(buffer);
+        if (!text || !text.trim()) throw new Error('空响应');
+        return text;
+    } finally {
+        clearTimeout(timeoutId);
+        外部信号?.removeEventListener('abort', onAbort);
+    }
+}
+
+// 多源竞速：加速站 + 官方 raw 并发，取最先成功的；全部失败时回退运行时缓存
+async function 抓取优选源文本(逻辑URL, 超时时间, 允许兜底) {
+    const key = 规范化优选源URL(逻辑URL);
+    const 候选源 = 优选源镜像表.get(key) || [逻辑URL];
+    const 竞速控制器 = new AbortController();
+    const 失败原因 = [];
+    try {
+        const 命中 = await Promise.any(候选源.map(async (url) => {
+            try {
+                const text = await 抓取单个优选源(url, 竞速控制器.signal, 超时时间);
+                return { text, url };
+            } catch (e) {
+                let host = url;
+                try { host = new URL(url).hostname; } catch (_) { }
+                失败原因.push(host + ': ' + (e?.message || String(e)));
+                throw e;
+            }
+        }));
+        优选源运行时缓存.set(key, 命中.text);
+        console.log('优选源抓取成功:', 逻辑URL, '→', 命中.url);
+        return 命中.text;
+    } catch (e) {
+        const 缓存 = 允许兜底 ? 优选源运行时缓存.get(key) : null;
+        if (缓存) {
+            console.warn('优选源全部失败，使用最近一次成功拉取的内容:', 逻辑URL, 失败原因.join(' | '));
+            return 缓存;
+        }
+        throw new Error('全部源失败: ' + (失败原因.join(' | ') || e?.message || String(e)));
+    } finally {
+        竞速控制器.abort(); // 取消尚未完成的其它源，避免多余等待
+    }
+}
+
 // 请求优选API
-async function 请求优选API(urls, 默认端口 = '443', 超时时间 = 3000) {
+async function 请求优选API(urls, 默认端口 = '443', 超时时间 = 8000, 允许兜底 = true) {
     if (!urls?.length) return [];
     const results = new Set();
     await Promise.allSettled(urls.map(async (url) => {
         try {
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 超时时间);
-            const response = await fetch(url, { signal: controller.signal });
-            clearTimeout(timeoutId);
-            let text = '';
-            try {
-                const buffer = await response.arrayBuffer();
-                const contentType = (response.headers.get('content-type') || '').toLowerCase();
-                const charset = contentType.match(/charset=([^\s;]+)/i)?.[1]?.toLowerCase() || '';
-
-                // 根据 Content-Type 响应头判断编码优先级
-                let decoders = ['utf-8', 'gb2312']; // 默认优先 UTF-8
-                if (charset.includes('gb') || charset.includes('gbk') || charset.includes('gb2312')) {
-                    decoders = ['gb2312', 'utf-8']; // 如果明确指定 GB 系编码，优先尝试 GB2312
-                }
-
-                // 尝试多种编码解码
-                let decodeSuccess = false;
-                for (const decoder of decoders) {
-                    try {
-                        const decoded = new TextDecoder(decoder).decode(buffer);
-                        // 验证解码结果的有效性
-                        if (decoded && decoded.length > 0 && !decoded.includes('\ufffd')) {
-                            text = decoded;
-                            decodeSuccess = true;
-                            break;
-                        } else if (decoded && decoded.length > 0) {
-                            // 如果有替换字符 (U+FFFD)，说明编码不匹配，继续尝试下一个编码
-                            continue;
-                        }
-                    } catch (e) {
-                        // 该编码解码失败，尝试下一个
-                        continue;
-                    }
-                }
-
-                // 如果所有编码都失败或无效，尝试 response.text()
-                if (!decodeSuccess) {
-                    text = await response.text();
-                }
-
-                // 如果返回的是空或无效数据，返回
-                if (!text || text.trim().length === 0) {
-                    return;
-                }
-            } catch (e) {
-                console.error('Failed to decode response:', e);
-                return;
-            }
+            const text = await 抓取优选源文本(url, 超时时间, 允许兜底);
             const lines = text.trim().split('\n').map(l => l.trim()).filter(l => l);
             const isCSV = lines.length > 1 && lines[0].includes(',');
             const IPV6_PATTERN = /^[^\[\]]*:[^\[\]]*:[^\[\]]/;
@@ -229,7 +275,9 @@ async function 请求优选API(urls, 默认端口 = '443', 超时时间 = 3000) 
                     });
                 }
             }
-        } catch (e) { }
+        } catch (e) {
+            console.error('优选源抓取失败:', url, e?.message || String(e));
+        }
     }));
     return Array.from(results);
 }
@@ -484,7 +532,9 @@ function generateLinksFromNewIPs(list, user, workerDomain, customPath = '/', ech
     const echSuffix = echConfig ? `&alpn=h3%2Ch2%2Chttp%2F1.1&ech=${encodeURIComponent(echConfig)}` : '';
     
     list.forEach(item => {
-        const nodeName = item.name.replace(/\s/g, '_');
+        let rawName = item.name;
+        try { rawName = decodeURIComponent(rawName); } catch (e) { }
+        const nodeName = rawName.replace(/\s/g, '_');
         const port = item.port;
         
         if (CF_HTTPS_PORTS.includes(port)) {
@@ -555,7 +605,8 @@ async function handleSubscriptionRequest(request, user, customDomain, piu, ipv4E
     if (egi) {
         try {
             // 检查是否是优选API URL（以https://开头）
-            if (piu && piu.toLowerCase().startsWith('https://')) {
+            // 多行 piu 交给下方分支拆分，避免被误判为单个 URL
+            if (piu && !piu.includes('\n') && piu.toLowerCase().startsWith('https://')) {
                 // 从优选API获取IP列表
                 const 优选API的IP = await 请求优选API([piu]);
                 if (优选API的IP && 优选API的IP.length > 0) {
@@ -1265,12 +1316,13 @@ function generateHomePage(scuValue) {
                     <label class="checkbox-label"><input type="checkbox" class="region-checkbox" value="https://bestcf.pages.dev/random-region/SG/100.txt" checked><span>新加坡 SG</span></label>
                     <label class="checkbox-label"><input type="checkbox" class="region-checkbox" value="https://bestcf.pages.dev/random-region/US/100.txt" checked><span>美国 US</span></label>
                     <label class="checkbox-label"><input type="checkbox" class="region-checkbox" value="https://bestcf.pages.dev/random-region/KR/100.txt" checked><span>韩国 KR</span></label>
+                    <label class="checkbox-label"><input type="checkbox" class="region-checkbox" value="https://raw.githubusercontent.com/f1161291/yx-auto/refs/heads/main/CMNI2" checked><span>移动 CMNI2</span></label>
                 </div>
                 <div style="margin-top: 8px;">
                     <button type="button" class="client-btn" style="font-size: 13px; padding: 6px 10px;" onclick="document.querySelectorAll('.region-checkbox').forEach(c=&gt;c.checked=true)">全选</button>
                     <button type="button" class="client-btn" style="font-size: 13px; padding: 6px 10px;" onclick="document.querySelectorAll('.region-checkbox').forEach(c=&gt;c.checked=false)">全不选</button>
                 </div>
-                <small style="display: block; margin-top: 6px; color: #86868b; font-size: 13px;">勾选需要使用的地区，生成订阅时会并行抓取这些优选列表</small>
+                <small style="display: block; margin-top: 6px; color: #86868b; font-size: 13px;">勾选需要使用的地区，生成订阅时会并行抓取这些优选列表；「移动 CMNI2」实时从仓库拉取并自动尝试加速站，文件更新后最多约 5 分钟生效（加速站缓存）</small>
             </div>
 
             <div class="form-group" style="margin-top: 12px;">
@@ -1318,38 +1370,6 @@ function generateHomePage(scuValue) {
                     <button type="button" class="client-btn" onclick="generateClientLink('v2ray', 'Shadowrocket')" style="font-size: 13px;">Shadowrocket</button>
                 </div>
                 <div class="result-url" id="clientSubscriptionUrl" style="display: none; margin-top: 12px; padding: 12px; background: rgba(0, 122, 255, 0.1); border-radius: 8px; font-size: 13px; color: #007aff; word-break: break-all;"></div>
-            </div>
-            
-            <div class="form-group">
-                <label>IP版本选择</label>
-                <div style="display: flex; gap: 16px; margin-top: 8px;">
-                    <label class="checkbox-label">
-                        <input type="checkbox" id="ipv4Enabled" checked>
-                        <span>IPv4</span>
-                    </label>
-                    <label class="checkbox-label">
-                        <input type="checkbox" id="ipv6Enabled">
-                        <span>IPv6</span>
-                    </label>
-                </div>
-            </div>
-            
-            <div class="form-group">
-                <label>运营商选择</label>
-                <div style="display: flex; gap: 16px; flex-wrap: wrap; margin-top: 8px;">
-                    <label class="checkbox-label">
-                        <input type="checkbox" id="ispMobile" checked>
-                        <span>移动</span>
-                    </label>
-                    <label class="checkbox-label">
-                        <input type="checkbox" id="ispUnicom" checked>
-                        <span>联通</span>
-                    </label>
-                    <label class="checkbox-label">
-                        <input type="checkbox" id="ispTelecom" checked>
-                        <span>电信</span>
-                    </label>
-                </div>
             </div>
             
             <div class="list-item" onclick="toggleSwitch('switchTLS')" style="margin-top: 8px;">
@@ -1477,12 +1497,6 @@ function generateHomePage(scuValue) {
                 return;
             }
             
-            const ipv4Enabled = document.getElementById('ipv4Enabled').checked;
-            const ipv6Enabled = document.getElementById('ipv6Enabled').checked;
-            const ispMobile = document.getElementById('ispMobile').checked;
-            const ispUnicom = document.getElementById('ispUnicom').checked;
-            const ispTelecom = document.getElementById('ispTelecom').checked;
-            
             // 地区优选：收集勾选的地区URL + 自定义URL，多行拼接
             const regionUrls = Array.from(document.querySelectorAll('.region-checkbox:checked')).map(cb => cb.value.trim()).filter(Boolean);
             const customGithub = document.getElementById('githubUrl').value.trim();
@@ -1504,12 +1518,6 @@ function generateHomePage(scuValue) {
             if (switches.switchVL) subscriptionUrl += '&ev=yes';
             if (switches.switchTJ) subscriptionUrl += '&et=yes';
             if (switches.switchVM) subscriptionUrl += '&mess=yes';
-            
-            if (!ipv4Enabled) subscriptionUrl += '&ipv4=no';
-            if (!ipv6Enabled) subscriptionUrl += '&ipv6=no';
-            if (!ispMobile) subscriptionUrl += '&ispMobile=no';
-            if (!ispUnicom) subscriptionUrl += '&ispUnicom=no';
-            if (!ispTelecom) subscriptionUrl += '&ispTelecom=no';
             
             // 添加TLS控制（ECH 开启时也会在服务端强制仅 TLS）
             if (switches.switchTLS) subscriptionUrl += '&dkby=yes';
@@ -1638,7 +1646,7 @@ export default {
             
             const apiUrl = url.searchParams.get('url');
             const port = url.searchParams.get('port') || '443';
-            const timeout = parseInt(url.searchParams.get('timeout') || '3000');
+            const timeout = parseInt(url.searchParams.get('timeout') || '8000');
             
             if (!apiUrl) {
                 return new Response(JSON.stringify({ 
@@ -1654,12 +1662,12 @@ export default {
             }
             
             try {
-                const results = await 请求优选API([apiUrl], port, timeout);
+                const results = await 请求优选API([apiUrl], port, timeout, false);
                 return new Response(JSON.stringify({ 
-                    success: true, 
+                    success: results.length > 0, 
                     results: results,
                     total: results.length,
-                    message: `成功获取 ${results.length} 个优选IP`
+                    message: results.length > 0 ? `成功获取 ${results.length} 个优选IP` : '未获取到优选IP，请查看 Worker 日志中的「优选源抓取失败 / 全部源失败」记录（CMNI2 会同时尝试加速站与官方 raw）'
                 }, null, 2), {
                     headers: { 
                         'Content-Type': 'application/json; charset=utf-8',
