@@ -36,6 +36,9 @@ const directDomains = [
     { domain: "cfip.1323123.xyz" },
     { domain: "xn--b6gac.eu.org" },
     { domain: "cloudflare.seeck.cn" },
+    { domain: "cmcc.cloudflare.seeck.cn" },
+    { domain: "cucc.cloudflare.seeck.cn" },
+    { domain: "ctcc.cloudflare.seeck.cn" },
     { domain: "cloudflare-ip.mofashi.ltd" }
 ];
 
@@ -105,8 +108,8 @@ async function md5Hex(text) {
     return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-// 获取动态IP列表（支持IPv4/IPv6和运营商筛选）
-async function fetchDynamicIPs(ipv4Enabled = true, ipv6Enabled = true, ispMobile = true, ispUnicom = true, ispTelecom = true) {
+// 获取动态IP列表（第三方接口，5 秒超时；ispNames 决定遍历的分组与节点备注名）
+async function fetchDynamicIPs() {
     const ispNames = {
         ctcc: '电信',
         cucc: '联通',
@@ -115,29 +118,30 @@ async function fetchDynamicIPs(ipv4Enabled = true, ipv6Enabled = true, ispMobile
         ipv6: 'IPv6'
     };
 
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
     try {
         const time = String(Date.now());
         const inner = await md5Hex(atob('RGRsVHh0TjBzVU91'));
         const key = await md5Hex(inner + atob('NzBjbG91ZGZsYXJlYXBpa2V5') + time);
         const response = await fetch(`${atob('aHR0cHM6Ly9hcGkudW91aW4uY29tL2luZGV4LnBocC9pbmRleC9DbG91ZGZsYXJl')}?key=${key}&time=${time}`, {
-            headers: { 'User-Agent': 'Mozilla/5.0' }
+            headers: { 'User-Agent': 'Mozilla/5.0' },
+            signal: controller.signal
         });
-        if (!response.ok) return [];
+        if (!response.ok) {
+            console.warn('动态IP接口返回 HTTP ' + response.status);
+            return [];
+        }
         const data = await response.json();
         const groups = data && data.data;
-        if (!groups) return [];
+        if (!groups) {
+            console.warn('动态IP接口返回空数据');
+            return [];
+        }
 
         const results = [];
         for (const groupKey of Object.keys(ispNames)) {
-            const isIPv6 = groupKey === 'ipv6';
-            if (isIPv6 && !ipv6Enabled) continue;
-            if (!isIPv6 && !ipv4Enabled) continue;
-
             const isp = ispNames[groupKey];
-            if (isp === '移动' && !ispMobile) continue;
-            if (isp === '联通' && !ispUnicom) continue;
-            if (isp === '电信' && !ispTelecom) continue;
-
             const group = groups[groupKey];
             const info = group && Array.isArray(group.info) ? group.info : [];
             let index = 0;
@@ -151,7 +155,10 @@ async function fetchDynamicIPs(ipv4Enabled = true, ipv6Enabled = true, ispMobile
         }
         return results;
     } catch (e) {
+        console.error('获取动态IP失败:', e?.message || String(e));
         return [];
+    } finally {
+        clearTimeout(timeoutId);
     }
 }
 
@@ -555,7 +562,7 @@ function generateLinksFromNewIPs(list, user, workerDomain, customPath = '/', ech
 }
 
 // 生成订阅内容
-async function handleSubscriptionRequest(request, user, customDomain, piu, ipv4Enabled, ipv6Enabled, ispMobile, ispUnicom, ispTelecom, evEnabled, etEnabled, vmEnabled, disableNonTLS, customPath, echConfig = null) {
+async function handleSubscriptionRequest(request, user, customDomain, piu, evEnabled, etEnabled, vmEnabled, disableNonTLS, customPath, echConfig = null) {
     const url = new URL(request.url);
     const finalLinks = [];
     const workerDomain = url.hostname;  // workerDomain始终是请求的hostname
@@ -591,13 +598,9 @@ async function handleSubscriptionRequest(request, user, customDomain, piu, ipv4E
 
     // 优选IP
     if (epi) {
-        try {
-            const dynamicIPList = await fetchDynamicIPs(ipv4Enabled, ipv6Enabled, ispMobile, ispUnicom, ispTelecom);
-            if (dynamicIPList.length > 0) {
-                await addNodesFromList(dynamicIPList);
-            }
-        } catch (error) {
-            console.error('获取动态IP失败:', error);
+        const dynamicIPList = await fetchDynamicIPs();
+        if (dynamicIPList.length > 0) {
+            await addNodesFromList(dynamicIPList);
         }
     }
 
@@ -1711,15 +1714,6 @@ export default {
             const etEnabled = url.searchParams.get('et') === 'yes';
             const vmEnabled = url.searchParams.get('mess') === 'yes';
             
-            // IPv4/IPv6选择
-            const ipv4Enabled = url.searchParams.get('ipv4') !== 'no';
-            const ipv6Enabled = url.searchParams.get('ipv6') !== 'no';
-            
-            // 运营商选择
-            const ispMobile = url.searchParams.get('ispMobile') !== 'no';
-            const ispUnicom = url.searchParams.get('ispUnicom') !== 'no';
-            const ispTelecom = url.searchParams.get('ispTelecom') !== 'no';
-            
             // TLS控制（ECH 开启时强制仅 TLS）
             let disableNonTLS = url.searchParams.get('dkby') === 'yes';
             const echParam = url.searchParams.get('ech');
@@ -1732,7 +1726,7 @@ export default {
             // 自定义路径
             const customPath = url.searchParams.get('path') || '/';
 
-            return await handleSubscriptionRequest(request, uuid, domain, piu, ipv4Enabled, ipv6Enabled, ispMobile, ispUnicom, ispTelecom, evEnabled, etEnabled, vmEnabled, disableNonTLS, customPath, echConfig);
+            return await handleSubscriptionRequest(request, uuid, domain, piu, evEnabled, etEnabled, vmEnabled, disableNonTLS, customPath, echConfig);
         }
         
         return new Response('Not Found', { status: 404 });
