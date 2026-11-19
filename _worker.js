@@ -1,16 +1,15 @@
 // Cloudflare Worker - 简化版优选工具
-// 仅保留优选域名、优选IP、GitHub、上报和节点生成功能
+// 仅保留优选域名、GitHub优选（地区优选）、上报和节点生成功能
 // 修复记录：已修正 VMess 协议下节点名称包含中文导致 Error 1101 的问题
 
 // 默认配置
 let customPreferredIPs = [];
 let customPreferredDomains = [];
-let epd = true;  // 启用优选域名
-let epi = false;  // 启用优选IP
-let egi = true;  // 启用GitHub优选
-let ev = true;   // 启用VLESS协议
-let et = false;  // 启用Trojan协议
-let vm = false;  // 启用VMess协议
+let epd = true;  // 优选域名
+let egi = false;  // GitHub优选（默认关闭）
+let ev = true;   // VLESS协议
+let et = false;  // Trojan协议
+let vm = false;  // VMess协议
 let scu = 'https://url.v1.mk/sub';  // 订阅转换地址
 
 // 默认优选域名列表
@@ -93,66 +92,6 @@ function isValidUUID(str) {
 // 从环境变量获取配置
 function getConfigValue(key, defaultValue) {
     return defaultValue || '';
-}
-
-// 计算 MD5（Workers 运行时支持，非 WebCrypto 标准算法）
-async function md5Hex(text) {
-    const buf = await crypto.subtle.digest('MD5', new TextEncoder().encode(text));
-    return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
-}
-
-// 获取动态IP列表（第三方接口，5 秒超时；ispNames 决定遍历的分组与节点备注名）
-async function fetchDynamicIPs() {
-    const ispNames = {
-        ctcc: '电信',
-        cucc: '联通',
-        cmcc: '移动',
-        bgp: '多线',
-        ipv6: 'IPv6'
-    };
-
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000);
-    try {
-        const time = String(Date.now());
-        const inner = await md5Hex(atob('RGRsVHh0TjBzVU91'));
-        const key = await md5Hex(inner + atob('NzBjbG91ZGZsYXJlYXBpa2V5') + time);
-        const response = await fetch(`${atob('aHR0cHM6Ly9hcGkudW91aW4uY29tL2luZGV4LnBocC9pbmRleC9DbG91ZGZsYXJl')}?key=${key}&time=${time}`, {
-            headers: { 'User-Agent': 'Mozilla/5.0' },
-            signal: controller.signal
-        });
-        if (!response.ok) {
-            console.warn('动态IP接口返回 HTTP ' + response.status);
-            return [];
-        }
-        const data = await response.json();
-        const groups = data && data.data;
-        if (!groups) {
-            console.warn('动态IP接口返回空数据');
-            return [];
-        }
-
-        const results = [];
-        for (const groupKey of Object.keys(ispNames)) {
-            const isp = ispNames[groupKey];
-            const group = groups[groupKey];
-            const info = group && Array.isArray(group.info) ? group.info : [];
-            let index = 0;
-            for (const entry of info) {
-                const ip = String(entry && entry.ip || '').trim();
-                if (!ip) continue;
-                index++;
-                // 接口不返回机房信息，用序号占位避免同线路节点重名
-                results.push({ isp: isp, ip: ip, colo: String(index).padStart(2, '0') });
-            }
-        }
-        return results;
-    } catch (e) {
-        console.error('获取动态IP失败:', e?.message || String(e));
-        return [];
-    } finally {
-        clearTimeout(timeoutId);
-    }
 }
 
 // 整理成数组
@@ -555,7 +494,7 @@ async function handleSubscriptionRequest(request, user, customDomain, piu, evEna
     const wsPath = customPath || '/';
 
     async function addNodesFromList(list) {
-        // 确保至少有一个协议被启用
+        // 确保至少有一个协议被选中
         const hasProtocol = evEnabled || etEnabled || vmEnabled;
         const useVL = hasProtocol ? evEnabled : true;  // 如果没有选择任何协议，默认使用VLESS
         
@@ -578,14 +517,6 @@ async function handleSubscriptionRequest(request, user, customDomain, piu, evEna
     if (epd) {
         const domainList = directDomains.map(d => ({ ip: d.domain, isp: d.name || d.domain }));
         await addNodesFromList(domainList);
-    }
-
-    // 优选IP
-    if (epi) {
-        const dynamicIPList = await fetchDynamicIPs();
-        if (dynamicIPList.length > 0) {
-            await addNodesFromList(dynamicIPList);
-        }
     }
 
     // GitHub优选 / 优选API
@@ -1268,38 +1199,31 @@ function generateHomePage(scuValue) {
             
             <div class="list-item" onclick="toggleSwitch('switchDomain')">
                 <div>
-                    <div class="list-item-label">启用优选域名</div>
+                    <div class="list-item-label">优选域名</div>
                 </div>
                 <div class="switch active" id="switchDomain"></div>
             </div>
             
-            <div class="list-item" onclick="toggleSwitch('switchIP')">
-                <div>
-                    <div class="list-item-label">启用优选IP</div>
-                </div>
-                <div class="switch" id="switchIP"></div>
-            </div>
-            
             <div class="list-item" onclick="toggleSwitch('switchGitHub')">
                 <div>
-                    <div class="list-item-label">启用GitHub优选</div>
+                    <div class="list-item-label">GitHub优选</div>
                 </div>
-                <div class="switch active" id="switchGitHub"></div>
+                <div class="switch" id="switchGitHub"></div>
             </div>
             
             <div class="form-group" id="regionGroup" style="margin-top: 12px;">
-                <label>地区优选（可选，默认全选）</label>
+                <label>地区优选（可选，默认不选）</label>
                 <div style="display: flex; gap: 16px; flex-wrap: wrap; margin-top: 8px;">
-                    <label class="checkbox-label"><input type="checkbox" class="region-checkbox" value="https://bestcf.pages.dev/random-region/HK/100.txt" checked><span>香港 HK</span></label>
-                    <label class="checkbox-label"><input type="checkbox" class="region-checkbox" value="https://bestcf.pages.dev/random-region/TW/100.txt" checked><span>台湾 TW</span></label>
-                    <label class="checkbox-label"><input type="checkbox" class="region-checkbox" value="https://bestcf.pages.dev/random-region/JP/100.txt" checked><span>日本 JP</span></label>
-                    <label class="checkbox-label"><input type="checkbox" class="region-checkbox" value="https://bestcf.pages.dev/random-region/SG/100.txt" checked><span>新加坡 SG</span></label>
-                    <label class="checkbox-label"><input type="checkbox" class="region-checkbox" value="https://bestcf.pages.dev/random-region/US/100.txt" checked><span>美国 US</span></label>
-                    <label class="checkbox-label"><input type="checkbox" class="region-checkbox" value="https://bestcf.pages.dev/random-region/KR/100.txt" checked><span>韩国 KR</span></label>
-                    <label class="checkbox-label"><input type="checkbox" class="region-checkbox" value="https://raw.githubusercontent.com/f1161291/yx-auto/refs/heads/main/CMNI2" checked><span>移动 CMNI2</span></label>
+                    <label class="checkbox-label"><input type="checkbox" class="region-checkbox" value="https://bestcf.pages.dev/random-region/HK/100.txt"><span>香港 HK</span></label>
+                    <label class="checkbox-label"><input type="checkbox" class="region-checkbox" value="https://bestcf.pages.dev/random-region/TW/100.txt"><span>台湾 TW</span></label>
+                    <label class="checkbox-label"><input type="checkbox" class="region-checkbox" value="https://bestcf.pages.dev/random-region/JP/100.txt"><span>日本 JP</span></label>
+                    <label class="checkbox-label"><input type="checkbox" class="region-checkbox" value="https://bestcf.pages.dev/random-region/SG/100.txt"><span>新加坡 SG</span></label>
+                    <label class="checkbox-label"><input type="checkbox" class="region-checkbox" value="https://bestcf.pages.dev/random-region/US/100.txt"><span>美国 US</span></label>
+                    <label class="checkbox-label"><input type="checkbox" class="region-checkbox" value="https://bestcf.pages.dev/random-region/KR/100.txt"><span>韩国 KR</span></label>
+                    <label class="checkbox-label"><input type="checkbox" class="region-checkbox" value="https://raw.githubusercontent.com/f1161291/yx-auto/refs/heads/main/CMNI2"><span>移动 CMNI2</span></label>
                 </div>
                 <div style="margin-top: 8px;">
-                    <button type="button" class="client-btn" style="font-size: 13px; padding: 6px 10px;" onclick="document.querySelectorAll('.region-checkbox').forEach(c=&gt;c.checked=true)">全选</button>
+                    <button type="button" class="client-btn" style="font-size: 13px; padding: 6px 10px;" onclick="document.querySelectorAll('.region-checkbox').forEach(c=&gt;c.checked=true);enableGitHubSwitch()">全选</button>
                     <button type="button" class="client-btn" style="font-size: 13px; padding: 6px 10px;" onclick="document.querySelectorAll('.region-checkbox').forEach(c=&gt;c.checked=false)">全不选</button>
                 </div>
                 <small style="display: block; margin-top: 6px; color: #86868b; font-size: 13px;">勾选需要使用的地区，生成订阅时会并行抓取这些优选列表；「移动 CMNI2」实时从仓库拉取并自动尝试加速站，文件更新后最多约 5 分钟生效（加速站缓存）</small>
@@ -1355,7 +1279,7 @@ function generateHomePage(scuValue) {
             <div class="list-item" onclick="toggleSwitch('switchTLS')" style="margin-top: 8px;">
                 <div>
                     <div class="list-item-label">仅TLS节点</div>
-                    <div class="list-item-description">启用后只生成带TLS的节点，不生成非TLS节点（如80端口）</div>
+                    <div class="list-item-description">仅生成带TLS的节点，不生成非TLS节点（如80端口）</div>
                 </div>
                 <div class="switch active" id="switchTLS"></div>
             </div>
@@ -1373,8 +1297,7 @@ function generateHomePage(scuValue) {
     <script>
         let switches = {
             switchDomain: true,
-            switchIP: false,
-            switchGitHub: true,
+            switchGitHub: false,
             switchVL: true,
             switchTJ: false,
             switchVM: false,
@@ -1386,6 +1309,29 @@ function generateHomePage(scuValue) {
             switches[id] = !switches[id];
             switchEl.classList.toggle('active');
         }
+
+        // 用户调整地区复选框（勾选或取消勾选）后，只要仍有选中的地区，
+        // 就自动打开 GitHub 优选主开关，避免"只留 CMNI2 但主开关没开"导致 egi=no 取不到节点。
+        function enableGitHubSwitch() {
+            if (switches.switchGitHub) return;
+            switches.switchGitHub = true;
+            const gh = document.getElementById('switchGitHub');
+            if (gh) gh.classList.add('active');
+        }
+        document.addEventListener('change', function (e) {
+            const t = e.target;
+            if (t && t.classList && t.classList.contains('region-checkbox')) {
+                if (document.querySelectorAll('.region-checkbox:checked').length > 0) {
+                    enableGitHubSwitch();
+                }
+            }
+        });
+        document.addEventListener('input', function (e) {
+            const t = e.target;
+            if (t && t.id === 'githubUrl' && String(t.value || '').trim()) {
+                enableGitHubSwitch();
+            }
+        });
         
         
         // 订阅转换地址（从服务器注入）
@@ -1464,7 +1410,7 @@ function generateHomePage(scuValue) {
 
             const currentUrl = new URL(window.location.href);
             const baseUrl = currentUrl.origin;
-            let subscriptionUrl = \`\${baseUrl}/\${uuid}/sub?domain=\${encodeURIComponent(domain)}&epd=\${switches.switchDomain ? 'yes' : 'no'}&epi=\${switches.switchIP ? 'yes' : 'no'}&egi=\${switches.switchGitHub ? 'yes' : 'no'}\`;
+            let subscriptionUrl = \`\${baseUrl}/\${uuid}/sub?domain=\${encodeURIComponent(domain)}&epd=\${switches.switchDomain ? 'yes' : 'no'}&egi=\${switches.switchGitHub ? 'yes' : 'no'}\`;
 
             // 添加GitHub优选URL（地区源 + 自定义源，多行拼接；为空表示不使用GitHub优选）
             subscriptionUrl += \`&piu=\${encodeURIComponent(githubUrl)}\`;
@@ -1636,7 +1582,7 @@ export default {
             }
         }
         
-        // 订阅请求格式: /{UUID或Password}/sub?domain=xxx&epd=yes&epi=yes&egi=yes
+        // 订阅请求格式: /{UUID或Password}/sub?domain=xxx&epd=yes&egi=yes
         const pathMatch = path.match(/^\/([^\/]+)\/sub$/);
         if (pathMatch) {
             const uuid = pathMatch[1];
@@ -1648,8 +1594,7 @@ export default {
             
             // 从URL参数获取配置
             epd = url.searchParams.get('epd') !== 'no';
-            epi = url.searchParams.get('epi') !== 'no';
-            egi = url.searchParams.get('egi') !== 'no';
+            egi = url.searchParams.get('egi') === 'yes';
             // piu 为 null（未提供）时使用内置全部地区源；为空串（前端显式不选）时不使用GitHub优选
             const piuParam = url.searchParams.get('piu');
             const piu = piuParam === null ? defaultIPURL : piuParam;
