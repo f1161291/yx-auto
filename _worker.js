@@ -357,7 +357,7 @@ function generateLinksFromSource(list, user, workerDomain, disableNonTLS = false
 
         portsToGenerate.forEach(({ port, tls }) => {
             if (tls) {
-                const wsNodeName = `${nodeNameBase}-${port}-WS-TLS`;
+                const wsNodeName = nodeNameBase;
                 const wsParams = new URLSearchParams({ 
                     encryption: 'none', 
                     security: 'tls', 
@@ -373,7 +373,7 @@ function generateLinksFromSource(list, user, workerDomain, disableNonTLS = false
                 }
                 links.push(`${proto}://${user}@${safeIP}:${port}?${wsParams.toString()}#${encodeURIComponent(wsNodeName)}`);
             } else {
-                const wsNodeName = `${nodeNameBase}-${port}-WS`;
+                const wsNodeName = nodeNameBase;
                 const wsParams = new URLSearchParams({
                     encryption: 'none',
                     security: 'none',
@@ -429,7 +429,7 @@ async function generateTrojanLinksFromSource(list, user, workerDomain, disableNo
 
         portsToGenerate.forEach(({ port, tls }) => {
             if (tls) {
-                const wsNodeName = `${nodeNameBase}-${port}-Trojan-WS-TLS`;
+                const wsNodeName = nodeNameBase;
                 const wsParams = new URLSearchParams({ 
                     security: 'tls', 
                     sni: workerDomain, 
@@ -444,7 +444,7 @@ async function generateTrojanLinksFromSource(list, user, workerDomain, disableNo
                 }
                 links.push(`trojan://${password}@${safeIP}:${port}?${wsParams.toString()}#${encodeURIComponent(wsNodeName)}`);
             } else {
-                const wsNodeName = `${nodeNameBase}-${port}-Trojan-WS`;
+                const wsNodeName = nodeNameBase;
                 const wsParams = new URLSearchParams({
                     security: 'none',
                     type: 'ws',
@@ -499,7 +499,7 @@ function generateVMessLinksFromSource(list, user, workerDomain, disableNonTLS = 
         portsToGenerate.forEach(({ port, tls }) => {
             const vmessConfig = {
                 v: "2",
-                ps: tls ? `${nodeNameBase}-${port}-VMess-WS-TLS` : `${nodeNameBase}-${port}-VMess-WS`,
+                ps: nodeNameBase,
                 add: safeIP,
                 port: port.toString(),
                 id: user,
@@ -545,15 +545,15 @@ function generateLinksFromNewIPs(list, user, workerDomain, customPath = '/', ech
         const port = item.port;
         
         if (CF_HTTPS_PORTS.includes(port)) {
-            const wsNodeName = `${nodeName}-${port}-WS-TLS`;
+            const wsNodeName = nodeName;
             const link = `${proto}://${user}@${item.ip}:${port}?encryption=none&security=tls&sni=${workerDomain}&fp=chrome&type=ws&host=${workerDomain}&path=${wsPath}${echSuffix}#${encodeURIComponent(wsNodeName)}`;
             links.push(link);
         } else if (CF_HTTP_PORTS.includes(port)) {
-            const wsNodeName = `${nodeName}-${port}-WS`;
+            const wsNodeName = nodeName;
             const link = `${proto}://${user}@${item.ip}:${port}?encryption=none&security=none&type=ws&host=${workerDomain}&path=${wsPath}#${encodeURIComponent(wsNodeName)}`;
             links.push(link);
         } else {
-            const wsNodeName = `${nodeName}-${port}-WS-TLS`;
+            const wsNodeName = nodeName;
             const link = `${proto}://${user}@${item.ip}:${port}?encryption=none&security=tls&sni=${workerDomain}&fp=chrome&type=ws&host=${workerDomain}&path=${wsPath}${echSuffix}#${encodeURIComponent(wsNodeName)}`;
             links.push(link);
         }
