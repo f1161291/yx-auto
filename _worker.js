@@ -47,19 +47,28 @@ const builtinPreferredRegions = [
 // 默认订阅（未显式指定 piu 时）使用以上全部地区源拼接
 const defaultIPURL = builtinPreferredRegions.map(r => r.url).join('\n');
 
+// GitHub 加速站：与官方 raw 并发竞速，取最先成功返回的；约有 5 分钟缓存
+const MIRROR_PREFIX = 'https://js.xiray.de5.net/';
+
 // CMNI2 优选库：不写死内容，运行时从线上拉取，仓库文件更新后自动生效
 const CMNI2_URL = 'https://raw.githubusercontent.com/f1161291/yx-auto/refs/heads/main/CMNI2';
 const CMNI2_SHORT_URL = 'https://raw.githubusercontent.com/f1161291/yx-auto/main/CMNI2';
-const CMNI2_MIRROR = 'https://js.xiray.de5.net/' + CMNI2_URL; // GitHub 加速站（约 5 分钟缓存）
-
-// 竞速源列表：并发请求，任一成功即可。
-// 加速站更快但有约 5 分钟缓存；若希望每次都拿到刚更新的文件，把第一行删掉，只留官方 raw。
+const CMNI2_MIRROR = MIRROR_PREFIX + CMNI2_URL;
 const CMNI2_SOURCES = [
     CMNI2_MIRROR,
     CMNI2_URL,
 ];
 
-// 剥掉加速站前缀与 refs/heads，让同一个文件的各种写法共用一份缓存
+// 广电优选库：同样走加速站 + 官方 raw 竞速
+const GD_URL = 'https://raw.githubusercontent.com/lizhiwei0608/router/refs/heads/main/all.txt';
+const GD_SHORT_URL = 'https://raw.githubusercontent.com/lizhiwei0608/router/main/all.txt';
+const GD_MIRROR = MIRROR_PREFIX + GD_URL;
+const GD_SOURCES = [
+    GD_MIRROR,
+    GD_URL,
+];
+
+// 兼容历史加速站写法：剥掉可能残留的加速站前缀与 refs/heads，让同一个文件的各种写法共用一份缓存
 function 规范化优选源URL(url) {
     const raw = String(url || '').trim();
     const stripped = raw.replace(/^https:\/\/js\.xiray\.de5\.net\//i, '').replace(/\/refs\/heads\//i, '/');
@@ -76,6 +85,9 @@ function 规范化优选源URL(url) {
 const 优选源镜像表 = new Map();
 for (const 别名 of [CMNI2_URL, CMNI2_SHORT_URL, CMNI2_MIRROR]) {
     优选源镜像表.set(规范化优选源URL(别名), CMNI2_SOURCES);
+}
+for (const 别名 of [GD_URL, GD_SHORT_URL, GD_MIRROR]) {
+    优选源镜像表.set(规范化优选源URL(别名), GD_SOURCES);
 }
 
 // isolate 级缓存：只保存「最近一次成功拉取到的线上内容」，全部源失败时兜底。
@@ -131,7 +143,7 @@ async function 抓取单个优选源(url, 外部信号, 超时时间) {
     }
 }
 
-// 多源竞速：加速站 + 官方 raw 并发，取最先成功的；全部失败时回退运行时缓存
+// 抓取优选源文本：候选源并发请求取最先成功的；全部失败时回退运行时缓存
 async function 抓取优选源文本(逻辑URL, 超时时间, 允许兜底) {
     const key = 规范化优选源URL(逻辑URL);
     const 候选源 = 优选源镜像表.get(key) || [逻辑URL];
@@ -1221,12 +1233,13 @@ function generateHomePage(scuValue) {
                     <label class="checkbox-label"><input type="checkbox" class="region-checkbox" value="https://bestcf.pages.dev/random-region/US/100.txt"><span>美国 US</span></label>
                     <label class="checkbox-label"><input type="checkbox" class="region-checkbox" value="https://bestcf.pages.dev/random-region/KR/100.txt"><span>韩国 KR</span></label>
                     <label class="checkbox-label"><input type="checkbox" class="region-checkbox" value="https://raw.githubusercontent.com/f1161291/yx-auto/refs/heads/main/CMNI2"><span>移动 CMNI2</span></label>
+                    <label class="checkbox-label"><input type="checkbox" class="region-checkbox" value="https://raw.githubusercontent.com/lizhiwei0608/router/refs/heads/main/all.txt"><span>广电</span></label>
                 </div>
                 <div style="margin-top: 8px;">
                     <button type="button" class="client-btn" style="font-size: 13px; padding: 6px 10px;" onclick="document.querySelectorAll('.region-checkbox').forEach(c=&gt;c.checked=true);enableGitHubSwitch()">全选</button>
                     <button type="button" class="client-btn" style="font-size: 13px; padding: 6px 10px;" onclick="document.querySelectorAll('.region-checkbox').forEach(c=&gt;c.checked=false)">全不选</button>
                 </div>
-                <small style="display: block; margin-top: 6px; color: #86868b; font-size: 13px;">勾选需要使用的地区，生成订阅时会并行抓取这些优选列表；「移动 CMNI2」实时从仓库拉取并自动尝试加速站，文件更新后最多约 5 分钟生效（加速站缓存）</small>
+                <small style="display: block; margin-top: 6px; color: #86868b; font-size: 13px;">勾选需要使用的地区，生成订阅时会并行抓取这些优选列表；「移动 CMNI2」与「广电」都会同时尝试加速站与官方地址，取最快返回的；加速站约 5 分钟缓存，文件更新后可能有延迟</small>
             </div>
 
             <div class="form-group" style="margin-top: 12px;">
@@ -1561,7 +1574,7 @@ export default {
                     success: results.length > 0, 
                     results: results,
                     total: results.length,
-                    message: results.length > 0 ? `成功获取 ${results.length} 个优选IP` : '未获取到优选IP，请查看 Worker 日志中的「优选源抓取失败 / 全部源失败」记录（CMNI2 会同时尝试加速站与官方 raw）'
+                    message: results.length > 0 ? `成功获取 ${results.length} 个优选IP` : '未获取到优选IP，请查看 Worker 日志中的「优选源抓取失败 / 全部源失败」记录（CMNI2 与广电均会同时尝试加速站与官方 raw）'
                 }, null, 2), {
                     headers: { 
                         'Content-Type': 'application/json; charset=utf-8',
