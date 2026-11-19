@@ -32,9 +32,6 @@ const directDomains = [
     { domain: "cfip.1323123.xyz" },
     { domain: "xn--b6gac.eu.org" },
     { domain: "cloudflare.seeck.cn" },
-    { domain: "cmcc.cloudflare.seeck.cn" },
-    { domain: "cucc.cloudflare.seeck.cn" },
-    { domain: "ctcc.cloudflare.seeck.cn" },
     { domain: "cloudflare-ip.mofashi.ltd" }
 ];
 
