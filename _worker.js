@@ -16,6 +16,7 @@ let scu = 'https://url.v1.mk/sub';  // 订阅转换地址
 const directDomains = [
     { name: "cloudflare.182682.xyz", domain: "cloudflare.182682.xyz" },
     { domain: "freeyx.cloudflare88.eu.org" },
+    { domain: "dsxys.com" },
     { domain: "bestcf.top" },
     { domain: "mfa.gov.ua" },
     { domain: "cf.0sm.com" },
@@ -25,11 +26,13 @@ const directDomains = [
     { domain: "ss.408508.xyz" },
     { domain: "cf.130519.xyz" },
     { domain: "cf.090227.xyz" },
-    { domain: "cdn.547320.xyz" },		
+    { domain: "cdn.547320.xyz" },
+    { domain: "ips.993888.xyz" },    
+    { domain: "ns.dnsspeed.top" },     
     { domain: "cdn.2020111.xyz" },
     { domain: "cdns.doon.eu.org" },
     { domain: "cfip.1323123.xyz" },
-    { domain: "xn--b6gac.eu.org" },
+    { domain: "bestcf.030101.xyz" },
     { domain: "cloudflare.seeck.cn" },
     { domain: "cloudflare-ip.mofashi.ltd" }
 ];
